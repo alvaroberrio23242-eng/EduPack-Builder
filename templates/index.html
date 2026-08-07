@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}EduPack Builder — Nuevo paquete{% endblock %}
+{% block content %}
+
+<video class="bg-video" autoplay muted loop playsinline poster="{{ url_for('static', filename='video/poster.jpg') }}">
+  <source src="{{ url_for('static', filename='video/fondo.mp4') }}" type="video/mp4">
+</video>
+<div class="bg-video-overlay"></div>
+
+<h1 class="page-title">Arma tu <span style="color:var(--burnt)">paquete educativo</span></h1>
+<p class="subtitle">Escribe el tema, la guía y la trivia, y agrega los términos de búsqueda para las imágenes libres. Al final obtienes un .zip listo para el aula.</p>
+
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+<form method="POST" action="{{ url_for('generar') }}" id="form-edupack">
+
+  <div class="section-card">
+    <h2>01 · Tema</h2>
+    <p class="hint">El nombre de la unidad que vas a enseñar.</p>
+    <label for="tema">Tema de la unidad</label>
+    <input type="text" id="tema" name="tema" placeholder="Ej. La fotosíntesis, La Revolución Industrial..." required>
+
+    <label for="objetivos">Objetivos de aprendizaje</label>
+    <textarea id="objetivos" name="objetivos" placeholder="¿Qué debería poder hacer el estudiante al terminar esta unidad?"></textarea>
+
+    <label for="contexto">Contexto / contenido de la guía</label>
+    <textarea id="contexto" name="contexto" placeholder="Texto principal que va en la guía docente."></textarea>
+  </div>
+
+  <div class="section-card">
+    <h2>02 · Trivia</h2>
+    <p class="hint">Agrega las preguntas de evaluación. Cada una necesita al menos 2 opciones y marcar la correcta.</p>
+    <div id="preguntas-contenedor"></div>
+    <button type="button" class="btn-add" id="btn-agregar-pregunta">+ Agregar pregunta</button>
+  </div>
+
+  <div class="section-card">
+    <h2>03 · Qué buscar</h2>
+    <p class="hint">Marca los tipos de recurso que quieres incluir. Todos usan los mismos términos de búsqueda de abajo.</p>
+    <div class="recursos-grid">
+      <label class="recurso-check"><input type="checkbox" name="recurso_imagenes" checked> Imágenes <span class="fuente-tag">Wikimedia + Openverse</span></label>
+      <label class="recurso-check"><input type="checkbox" name="recurso_videos"> Videos <span class="fuente-tag">Wikimedia + Internet Archive</span></label>
+      <label class="recurso-check"><input type="checkbox" name="recurso_repositorios"> Repositorios / proyectos <span class="fuente-tag">GitHub</span></label>
+      <label class="recurso-check"><input type="checkbox" name="recurso_ensayos"> Ensayos / artículos <span class="fuente-tag">Wikipedia</span></label>
+    </div>
+
+    <label for="terminos_imagenes" style="margin-top:18px;">Términos de búsqueda</label>
+    <input type="text" id="terminos_imagenes" name="terminos_imagenes" placeholder="Ej. célula vegetal, cloroplasto, hoja verde">
+
+    <label for="max_por_termino">Máximo de resultados por término (aplica a cada tipo marcado)</label>
+    <input type="number" id="max_por_termino" name="max_por_termino" value="6" min="1" max="100">
+  </div>
+
+  <button type="submit" class="btn wide">Generar paquete</button>
+</form>
+
+<template id="tpl-pregunta">
+  <div class="pregunta-block">
+    <label>Pregunta</label>
+    <input type="text" name="pregunta_texto[]" placeholder="Escribe la pregunta">
+    <div class="opciones-row">
+      <div>
+        <label>Opción A</label>
+        <input type="text" class="opcion-input" placeholder="Opción A">
+      </div>
+      <div>
+        <label>Opción B</label>
+        <input type="text" class="opcion-input" placeholder="Opción B">
+      </div>
+      <div>
+        <label>Opción C (opcional)</label>
+        <input type="text" class="opcion-input" placeholder="Opción C">
+      </div>
+      <div>
+        <label>Opción D (opcional)</label>
+        <input type="text" class="opcion-input" placeholder="Opción D">
+      </div>
+    </div>
+    <label>Respuesta correcta (escribe exactamente una de las opciones de arriba)</label>
+    <input type="text" name="pregunta_correcta[]" placeholder="Respuesta correcta">
+    <input type="hidden" name="pregunta_opciones[]" class="opciones-hidden">
+    <label>Explicación (opcional)</label>
+    <input type="text" name="pregunta_explicacion[]" placeholder="¿Por qué es correcta?">
+    <button type="button" class="remove-pregunta">Quitar pregunta</button>
+  </div>
+</template>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% endblock %}

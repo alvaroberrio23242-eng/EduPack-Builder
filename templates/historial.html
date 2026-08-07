@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Historial — EduPack Builder{% endblock %}
+{% block content %}
+
+<h1 class="page-title">Historial de paquetes</h1>
+<p class="subtitle">Todo lo que has generado antes, disponible para volver a descargar.</p>
+
+<div class="section-card">
+  {% if items %}
+    <table class="historial">
+      <thead>
+        <tr><th>Tema</th><th>Fecha</th><th>Preguntas</th><th>Imágenes</th><th>Videos</th><th>Repos</th><th>Ensayos</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>{{ item.tema }}</td>
+          <td>{{ item.fecha }}</td>
+          <td>{{ item.num_preguntas }}</td>
+          <td>{{ item.num_imagenes }}</td>
+          <td>{{ item.num_videos | default(0) }}</td>
+          <td>{{ item.num_repositorios | default(0) }}</td>
+          <td>{{ item.num_ensayos | default(0) }}</td>
+          <td><a class="btn secondary" href="{{ url_for('descargar', job_id=item.id) }}">Descargar</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">Todavía no has generado ningún paquete.</div>
+  {% endif %}
+</div>
+{% endblock %}

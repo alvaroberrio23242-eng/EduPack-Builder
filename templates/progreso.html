@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Generando paquete...{% endblock %}
+{% block content %}
+
+<h1 class="page-title">Generando: <span style="color:var(--burnt)">{{ job.tema }}</span></h1>
+<p class="subtitle">Esto arma la guía, busca las imágenes con licencia libre y empaqueta todo. No cierres esta pestaña.</p>
+
+<div class="section-card">
+  <span class="status-tag" id="status-tag">{{ job.estado }}</span>
+  <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+  <div class="log-box" id="log-box"></div>
+  <div id="acciones" style="margin-top:20px;"></div>
+</div>
+
+<script>
+const jobId = "{{ job.id }}";
+const fill = document.getElementById("progress-fill");
+const tag = document.getElementById("status-tag");
+const logBox = document.getElementById("log-box");
+const acciones = document.getElementById("acciones");
+
+async function poll() {
+  try {
+    const res = await fetch(`/api/estado/${jobId}`);
+    if (!res.ok) return;
+    const job = await res.json();
+
+    tag.textContent = job.estado;
+    const pct = job.total ? Math.min(100, Math.round((job.progreso / job.total) * 100)) : 0;
+    fill.style.width = pct + "%";
+    logBox.innerHTML = job.log.map(l => `<div>${l}</div>`).join("");
+    logBox.scrollTop = logBox.scrollHeight;
+
+    if (job.estado === "listo") {
+      acciones.innerHTML = `
+        <a class="btn" href="/vista-previa/${jobId}">Ver vista previa</a>
+        <a class="btn secondary" href="/descargar/${jobId}">Descargar .zip</a>`;
+      return;
+    }
+    if (job.estado === "error") {
+      acciones.innerHTML = `<div class="alert">No se pudo generar el paquete: ${job.error}</div>`;
+      return;
+    }
+    setTimeout(poll, 1200);
+  } catch (e) {
+    setTimeout(poll, 2000);
+  }
+}
+poll();
+</script>
+{% endblock %}
