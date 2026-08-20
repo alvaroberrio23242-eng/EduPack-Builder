@@ -10,8 +10,44 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "job
 HISTORIAL_PATH = os.path.join(DATA_DIR, "historial.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-_JOBS = {}
+# Solo protege el historial.json compartido entre hilos del mismo proceso.
+# El estado de cada job ya no necesita lock: cada job solo lo escribe su
+# propio hilo, y las escrituras son atómicas (ver _escribir_estado).
 _LOCK = threading.Lock()
+
+
+def _carpeta_job(job_id):
+    return os.path.join(DATA_DIR, job_id)
+
+
+def _ruta_estado(job_id):
+    return os.path.join(_carpeta_job(job_id), "estado.json")
+
+
+def _leer_estado(job_id):
+    ruta = _ruta_estado(job_id)
+    if not os.path.exists(ruta):
+        return None
+    try:
+        with open(ruta, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        # Si el archivo quedó a medio escribir por algún corte (ej. el
+        # proceso murió justo al escribir), no se rompe: se trata como
+        # si el job no existiera en vez de lanzar una excepción.
+        return None
+
+
+def _escribir_estado(job_id, estado_dict):
+    """Escritura atómica: escribe en un .tmp y luego renombra, para que
+    ningún lector vea nunca un estado.json a medio escribir."""
+    carpeta = _carpeta_job(job_id)
+    os.makedirs(carpeta, exist_ok=True)
+    ruta = _ruta_estado(job_id)
+    ruta_tmp = ruta + ".tmp"
+    with open(ruta_tmp, "w", encoding="utf-8") as f:
+        json.dump(estado_dict, f, ensure_ascii=False, indent=2)
+    os.replace(ruta_tmp, ruta)
 
 
 def _leer_historial():
@@ -31,8 +67,7 @@ def obtener_historial():
 
 
 def obtener_job(job_id):
-    with _LOCK:
-        return _JOBS.get(job_id)
+    return _leer_estado(job_id)
 
 
 def crear_job(tema, objetivos, contexto, preguntas, terminos, max_por_termino, recursos):
@@ -40,13 +75,13 @@ def crear_job(tema, objetivos, contexto, preguntas, terminos, max_por_termino, r
     recursos: dict de booleanos, ej. {"imagenes": True, "videos": False, "repositorios": True, "ensayos": False}
     """
     job_id = uuid.uuid4().hex[:10]
-    etapas = [r for r, activo in recursos.items() if activo]
-    with _LOCK:
-        _JOBS[job_id] = {
-            "id": job_id, "tema": tema, "estado": "en_cola",
-            "progreso": 0, "total": max(len(terminos), 1),
-            "log": [], "error": None, "resultado": None,
-        }
+    estado_inicial = {
+        "id": job_id, "tema": tema, "estado": "en_cola",
+        "progreso": 0, "total": max(len(terminos), 1),
+        "log": [], "error": None, "resultado": None,
+    }
+    _escribir_estado(job_id, estado_inicial)
+
     hilo = threading.Thread(
         target=_ejecutar_job,
         args=(job_id, tema, objetivos, contexto, preguntas, terminos, max_por_termino, recursos),
@@ -57,13 +92,28 @@ def crear_job(tema, objetivos, contexto, preguntas, terminos, max_por_termino, r
 
 
 def _log(job_id, mensaje):
-    with _LOCK:
-        _JOBS[job_id]["log"].append(mensaje)
+    estado = _leer_estado(job_id)
+    if estado is None:
+        return
+    estado["log"].append(mensaje)
+    _escribir_estado(job_id, estado)
 
 
-def _set_estado(job_id, estado):
-    with _LOCK:
-        _JOBS[job_id]["estado"] = estado
+def _set_estado(job_id, nuevo_estado):
+    estado = _leer_estado(job_id)
+    if estado is None:
+        return
+    estado["estado"] = nuevo_estado
+    _escribir_estado(job_id, estado)
+
+
+def _actualizar_progreso(job_id, progreso, total):
+    estado = _leer_estado(job_id)
+    if estado is None:
+        return
+    estado["progreso"] = progreso
+    estado["total"] = total
+    _escribir_estado(job_id, estado)
 
 
 def _ejecutar_job(job_id, tema, objetivos, contexto, preguntas, terminos, max_por_termino, recursos):
@@ -78,9 +128,7 @@ def _ejecutar_job(job_id, tema, objetivos, contexto, preguntas, terminos, max_po
         content.escribir_contenido(carpeta_raiz, tema, guia_texto, preguntas_validas)
 
         def on_progreso(hecho, total):
-            with _LOCK:
-                _JOBS[job_id]["progreso"] = hecho
-                _JOBS[job_id]["total"] = total
+            _actualizar_progreso(job_id, hecho, total)
         log_cb = lambda m: _log(job_id, m)
 
         num_imagenes = descartadas_licencia = 0
@@ -133,24 +181,27 @@ def _ejecutar_job(job_id, tema, objetivos, contexto, preguntas, terminos, max_po
             "fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
 
-        with _LOCK:
-            _JOBS[job_id]["estado"] = "listo"
-            _JOBS[job_id]["resultado"] = resultado
+        estado = _leer_estado(job_id) or {"log": []}
+        estado["estado"] = "listo"
+        estado["resultado"] = resultado
+        _escribir_estado(job_id, estado)
 
-        historial = _leer_historial()
-        historial.append({
-            "id": job_id, "tema": tema, "fecha": resultado["fecha"],
-            "num_imagenes": num_imagenes, "num_preguntas": resultado["num_preguntas"],
-            "num_videos": len(lista_videos), "num_repositorios": len(lista_repos),
-            "num_ensayos": len(lista_ensayos), "zip_nombre": zip_nombre,
-        })
-        _guardar_historial(historial)
+        with _LOCK:
+            historial = _leer_historial()
+            historial.append({
+                "id": job_id, "tema": tema, "fecha": resultado["fecha"],
+                "num_imagenes": num_imagenes, "num_preguntas": resultado["num_preguntas"],
+                "num_videos": len(lista_videos), "num_repositorios": len(lista_repos),
+                "num_ensayos": len(lista_ensayos), "zip_nombre": zip_nombre,
+            })
+            _guardar_historial(historial)
         _log(job_id, "¡Listo! Paquete generado correctamente.")
 
     except Exception as e:
-        with _LOCK:
-            _JOBS[job_id]["estado"] = "error"
-            _JOBS[job_id]["error"] = str(e)
+        estado = _leer_estado(job_id) or {"log": []}
+        estado["estado"] = "error"
+        estado["error"] = str(e)
+        _escribir_estado(job_id, estado)
         _log(job_id, f"✗ Error: {e}")
 
 
