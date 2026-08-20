@@ -118,6 +118,24 @@ def _buscar_openverse(termino, max_resultados, log_cb=None):
     return resultados
 
 
+def _es_imagen_valida(img_bytes: bytes) -> bool:
+    """
+    Segunda barrera además del Content-Type: intenta abrir los bytes como
+    imagen real con Pillow. Cubre el caso en que el servidor declara mal
+    el Content-Type pero igual manda HTML/JSON de error.
+    """
+    if not img_bytes or len(img_bytes) < 100:
+        return False
+    try:
+        from PIL import Image
+        import io
+        with Image.open(io.BytesIO(img_bytes)) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
+
+
 def buscar_y_descargar(terminos, max_por_termino, carpeta_salida, progress_cb=None, log_cb=None):
     """
     terminos: lista de strings a buscar.
@@ -148,7 +166,26 @@ def buscar_y_descargar(terminos, max_por_termino, carpeta_salida, progress_cb=No
             nombre = f"imagen_{len(descargadas) + 1}{ext}"
             ruta = os.path.join(carpeta_salida, nombre)
             try:
-                img_bytes = requests.get(c["url_descarga"], headers=HEADERS, timeout=15).content
+                resp = requests.get(c["url_descarga"], headers=HEADERS, timeout=15)
+                resp.raise_for_status()
+
+                # Validación de contenido: si el servidor devolvió un error
+                # (410, página HTML de "no encontrado", etc.) puede llegar con
+                # status 200 igual, o el Content-Type puede no ser imagen.
+                # Sin esto, esas respuestas se guardaban como .jpg válidos.
+                content_type = resp.headers.get("Content-Type", "")
+                if not content_type.startswith("image/"):
+                    if log_cb:
+                        log_cb(f"  ⚠ Descartada: '{c['url_descarga']}' no es una imagen "
+                               f"(Content-Type: {content_type or 'desconocido'})")
+                    continue
+
+                img_bytes = resp.content
+                if not _es_imagen_valida(img_bytes):
+                    if log_cb:
+                        log_cb(f"  ⚠ Descartada: archivo corrupto o ilegible de '{c['url_descarga']}'")
+                    continue
+
                 with open(ruta, "wb") as f:
                     f.write(img_bytes)
                 c["archivo"] = nombre
