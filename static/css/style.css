@@ -97,6 +97,8 @@ input:focus, textarea:focus{outline:2px solid var(--burnt);outline-offset:1px;}
 .recurso-check .fuente-tag{
   margin-left:auto;font-family:'Space Mono',monospace;font-size:10px;color:rgba(36,24,18,.5);
 }
+.recurso-fijo{cursor:default;background:var(--cream);border-color:var(--teal);}
+.recurso-fijo::before{content:"✓";color:var(--teal);font-weight:bold;margin-right:2px;}
 
 /* ---- Botones ---- */
 .btn{

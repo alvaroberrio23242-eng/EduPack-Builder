@@ -45,3 +45,22 @@ class TestExtraerLicenciaCommons:
     def test_devuelve_vacio_si_ningun_campo_tiene_valor(self):
         meta = {}
         assert images._extraer_licencia_commons(meta) == ""
+
+    def test_prefiere_license_machine_readable_sobre_usageterms_humano(self):
+        # Este es el bug real: LicenseShortName vacío, UsageTerms trae texto
+        # humano completo, y License trae el código corto. Antes se devolvía
+        # UsageTerms (que no matchea LICENCIAS_PERMITIDAS) en vez de License.
+        meta = {
+            "UsageTerms": {"value": "Creative Commons Attribution-Share Alike 4.0"},
+            "License": {"value": "cc-by-sa-4.0"},
+        }
+        licencia = images._extraer_licencia_commons(meta)
+        assert licencia == "cc-by-sa-4.0"
+        assert images.es_licencia_valida(licencia) is True
+
+    def test_usageterms_humano_completo_es_valido_como_ultimo_recurso(self):
+        # Si NINGÚN campo machine-readable tiene valor, UsageTerms en texto
+        # humano debe reconocerse igual (antes se descartaba la imagen entera).
+        meta = {"UsageTerms": {"value": "Creative Commons Attribution-Share Alike 4.0"}}
+        licencia = images._extraer_licencia_commons(meta)
+        assert images.es_licencia_valida(licencia) is True

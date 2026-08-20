@@ -13,6 +13,10 @@ LICENCIAS_PERMITIDAS = [
     "cc-by-2.0", "cc-by-2.5", "cc-by-3.0", "cc-by-4.0",
     "cc-by-sa-2.0", "cc-by-sa-2.5", "cc-by-sa-3.0", "cc-by-sa-4.0",
     "by", "by-sa", "pdm",
+    # Wikimedia Commons a menudo solo rellena 'UsageTerms' con texto humano
+    # (no el código corto), así que hay que reconocer también estas formas:
+    "creative commons", "atribución", "attribution", "compartir igual",
+    "share alike", "dominio público", "dominio publico",
 ]
 
 HEADERS = {"User-Agent": "EduPackBuilder/1.0 (uso educativo)"}
@@ -27,11 +31,18 @@ def es_licencia_valida(licencia_str: str) -> bool:
 
 def _extraer_licencia_commons(meta: dict) -> str:
     """
-    El bug original: solo miraba 'LicenseShortName', que muchos archivos de
-    Commons no traen relleno aunque sí sean libres. Ahora se revisan varios
-    campos, de más a menos específico, y se usa el primero que aparezca.
+    Dos bugs corregidos aquí:
+    1) Antes solo se miraba 'LicenseShortName', que muchos archivos de Commons
+       no traen relleno aunque sí sean libres.
+    2) El orden importaba: 'UsageTerms' suele traer texto humano completo
+       ("Creative Commons Attribution-Share Alike 4.0") que no calzaba con los
+       códigos cortos de LICENCIAS_PERMITIDAS, y como se revisaba ANTES que
+       'License' (el campo machine-readable, ej. "cc-by-sa-4.0"), la imagen se
+       descartaba aunque 'License' sí tuviera un código válido.
+    Ahora se prioriza el campo machine-readable primero; 'UsageTerms' queda de
+    último recurso, y LICENCIAS_PERMITIDAS ya reconoce también su forma humana.
     """
-    for campo in ("LicenseShortName", "UsageTerms", "License"):
+    for campo in ("License", "LicenseShortName", "UsageTerms"):
         valor = meta.get(campo, {}).get("value", "")
         if valor:
             return valor

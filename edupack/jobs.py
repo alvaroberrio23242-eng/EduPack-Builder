@@ -70,9 +70,11 @@ def obtener_job(job_id):
     return _leer_estado(job_id)
 
 
-def crear_job(tema, objetivos, contexto, preguntas, terminos, max_por_termino, recursos):
+def crear_job(tema, objetivo_general, objetivos_especificos, contexto, preguntas, terminos, max_por_termino):
     """
-    recursos: dict de booleanos, ej. {"imagenes": True, "videos": False, "repositorios": True, "ensayos": False}
+    Los 4 tipos de recurso (imágenes, videos, repositorios, ensayos) ya no son
+    opcionales: todo paquete los busca todos, para que el resultado sea
+    siempre completo.
     """
     job_id = uuid.uuid4().hex[:10]
     estado_inicial = {
@@ -84,7 +86,7 @@ def crear_job(tema, objetivos, contexto, preguntas, terminos, max_por_termino, r
 
     hilo = threading.Thread(
         target=_ejecutar_job,
-        args=(job_id, tema, objetivos, contexto, preguntas, terminos, max_por_termino, recursos),
+        args=(job_id, tema, objetivo_general, objetivos_especificos, contexto, preguntas, terminos, max_por_termino),
         daemon=True,
     )
     hilo.start()
@@ -116,48 +118,46 @@ def _actualizar_progreso(job_id, progreso, total):
     _escribir_estado(job_id, estado)
 
 
-def _ejecutar_job(job_id, tema, objetivos, contexto, preguntas, terminos, max_por_termino, recursos):
+def _ejecutar_job(job_id, tema, objetivo_general, objetivos_especificos, contexto, preguntas, terminos, max_por_termino):
     carpeta_raiz = os.path.join(DATA_DIR, job_id, "paquete")
     try:
         _set_estado(job_id, "generando_contenido")
-        _log(job_id, f"Generando guía y trivia para «{tema}»...")
-        guia_texto = content.construir_guia(tema, objetivos, contexto)
+        _log(job_id, f"Generando guía para «{tema}»...")
+        guia_texto = content.construir_guia(tema, objetivo_general, objetivos_especificos, contexto)
         preguntas_validas = content.validar_preguntas(preguntas)
-        if not preguntas_validas:
-            _log(job_id, "⚠ Ninguna pregunta quedó completa; la trivia se guarda vacía.")
         content.escribir_contenido(carpeta_raiz, tema, guia_texto, preguntas_validas)
 
         def on_progreso(hecho, total):
             _actualizar_progreso(job_id, hecho, total)
         log_cb = lambda m: _log(job_id, m)
 
-        num_imagenes = descartadas_licencia = 0
-        lista_imagenes, lista_videos, lista_repos, lista_ensayos = [], [], [], []
+        # Los 4 tipos de recurso ya no son opcionales: se buscan siempre,
+        # para que todo paquete generado sea completo.
+        _set_estado(job_id, "buscando_imagenes")
+        resumen = images.buscar_y_descargar(
+            terminos, max_por_termino, os.path.join(carpeta_raiz, "3_Galeria"),
+            progress_cb=on_progreso, log_cb=log_cb,
+        )
+        lista_imagenes = resumen["descargadas"]
+        num_imagenes = len(lista_imagenes)
+        descartadas_licencia = resumen["descartadas_por_licencia"]
 
-        if recursos.get("imagenes"):
-            _set_estado(job_id, "buscando_imagenes")
-            resumen = images.buscar_y_descargar(
-                terminos, max_por_termino, os.path.join(carpeta_raiz, "3_Galeria"),
-                progress_cb=on_progreso, log_cb=log_cb,
-            )
-            lista_imagenes = resumen["descargadas"]
-            num_imagenes = len(lista_imagenes)
-            descartadas_licencia = resumen["descartadas_por_licencia"]
+        _set_estado(job_id, "buscando_videos")
+        lista_videos = videos.buscar_videos_multi(terminos, max_por_termino, on_progreso, log_cb)
+        videos.escribir_videos(carpeta_raiz, lista_videos)
 
-        if recursos.get("videos"):
-            _set_estado(job_id, "buscando_videos")
-            lista_videos = videos.buscar_videos_multi(terminos, max_por_termino, on_progreso, log_cb)
-            videos.escribir_videos(carpeta_raiz, lista_videos)
+        _set_estado(job_id, "buscando_repositorios")
+        lista_repos = repos.buscar_repositorios_multi(terminos, max_por_termino, on_progreso, log_cb)
+        repos.escribir_repositorios(carpeta_raiz, lista_repos)
 
-        if recursos.get("repositorios"):
-            _set_estado(job_id, "buscando_repositorios")
-            lista_repos = repos.buscar_repositorios_multi(terminos, max_por_termino, on_progreso, log_cb)
-            repos.escribir_repositorios(carpeta_raiz, lista_repos)
+        _set_estado(job_id, "buscando_ensayos")
+        lista_ensayos = essays.buscar_ensayos_multi(terminos, max_por_termino, on_progreso, log_cb)
+        essays.escribir_ensayos(carpeta_raiz, lista_ensayos)
 
-        if recursos.get("ensayos"):
-            _set_estado(job_id, "buscando_ensayos")
-            lista_ensayos = essays.buscar_ensayos_multi(terminos, max_por_termino, on_progreso, log_cb)
-            essays.escribir_ensayos(carpeta_raiz, lista_ensayos)
+        _set_estado(job_id, "generando_bibliografia")
+        _log(job_id, "Compilando bibliografía a partir de las fuentes encontradas...")
+        bibliografia_texto = content.construir_bibliografia(lista_imagenes, lista_videos, lista_ensayos, lista_repos)
+        content.escribir_bibliografia(carpeta_raiz, bibliografia_texto)
 
         _set_estado(job_id, "empaquetando")
         _log(job_id, "Empaquetando todo en un ZIP...")
@@ -167,6 +167,8 @@ def _ejecutar_job(job_id, tema, objetivos, contexto, preguntas, terminos, max_po
 
         resultado = {
             "tema": tema,
+            "objetivo_general": objetivo_general,
+            "objetivos_especificos": [o for o in objetivos_especificos if o.strip()],
             "num_preguntas": len(preguntas_validas),
             "num_imagenes": num_imagenes,
             "descartadas_por_licencia": descartadas_licencia,
@@ -175,6 +177,7 @@ def _ejecutar_job(job_id, tema, objetivos, contexto, preguntas, terminos, max_po
             "repositorios": lista_repos,
             "ensayos": lista_ensayos,
             "guia_texto": guia_texto,
+            "bibliografia_texto": bibliografia_texto,
             "preguntas": preguntas_validas,
             "zip_path": zip_destino,
             "zip_nombre": zip_nombre,

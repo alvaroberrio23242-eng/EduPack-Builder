@@ -15,18 +15,12 @@ def inicio():
 @app.route("/generar", methods=["POST"])
 def generar():
     tema = request.form.get("tema", "").strip()
-    objetivos = request.form.get("objetivos", "")
+    objetivo_general = request.form.get("objetivo_general", "")
+    objetivos_especificos = [o for o in request.form.getlist("objetivo_especifico[]") if o.strip()]
     contexto = request.form.get("contexto", "")
 
     terminos_raw = request.form.get("terminos_imagenes", "")
     terminos = [t.strip() for t in terminos_raw.split(",") if t.strip()]
-
-    recursos = {
-        "imagenes": request.form.get("recurso_imagenes") == "on",
-        "videos": request.form.get("recurso_videos") == "on",
-        "repositorios": request.form.get("recurso_repositorios") == "on",
-        "ensayos": request.form.get("recurso_ensayos") == "on",
-    }
 
     try:
         max_por_termino = max(1, min(int(request.form.get("max_por_termino", 6)), 100))
@@ -50,12 +44,12 @@ def generar():
 
     if not tema:
         return render_template("index.html", error="Escribe un tema antes de generar el paquete.")
+    if not objetivo_general.strip():
+        return render_template("index.html", error="Escribe el objetivo general de la unidad.")
     if not terminos:
         return render_template("index.html", error="Agrega al menos un término de búsqueda.")
-    if not any(recursos.values()):
-        return render_template("index.html", error="Marca al menos un tipo de recurso a buscar (imágenes, videos, repositorios o ensayos).")
 
-    job_id = jobs.crear_job(tema, objetivos, contexto, preguntas, terminos, max_por_termino, recursos)
+    job_id = jobs.crear_job(tema, objetivo_general, objetivos_especificos, contexto, preguntas, terminos, max_por_termino)
     return redirect(url_for("progreso", job_id=job_id))
 
 

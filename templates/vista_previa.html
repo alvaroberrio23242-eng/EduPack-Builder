@@ -6,6 +6,17 @@
 <p class="subtitle">Revisa lo que se generó antes de descargar el paquete final.</p>
 
 <div class="section-card">
+  <h2>Objetivos</h2>
+  <p><strong>Objetivo general:</strong> {{ job.resultado.objetivo_general }}</p>
+  {% if job.resultado.objetivos_especificos %}
+    <p><strong>Objetivos específicos:</strong></p>
+    <ul>
+      {% for o in job.resultado.objetivos_especificos %}<li>{{ o }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+</div>
+
+<div class="section-card">
   <h2>Guía docente</h2>
   <pre style="white-space:pre-wrap;font-family:'Work Sans',sans-serif;font-size:14.5px;">{{ job.resultado.guia_texto }}</pre>
 </div>
@@ -80,6 +91,12 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<div class="section-card">
+  <h2>Bibliografía</h2>
+  <p class="hint">Compilada automáticamente a partir de todas las fuentes que se incluyeron arriba.</p>
+  <pre style="white-space:pre-wrap;font-family:'Space Mono',monospace;font-size:13px;">{{ job.resultado.bibliografia_texto }}</pre>
+</div>
 
 <a class="btn wide" href="{{ url_for('descargar', job_id=job.id) }}">Descargar .zip</a>
 {% endblock %}

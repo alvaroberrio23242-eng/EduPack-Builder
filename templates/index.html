@@ -15,44 +15,56 @@
 <form method="POST" action="{{ url_for('generar') }}" id="form-edupack">
 
   <div class="section-card">
-    <h2>01 · Tema</h2>
-    <p class="hint">El nombre de la unidad que vas a enseñar.</p>
+    <h2>01 · Tema y objetivos</h2>
+    <p class="hint">El nombre de la unidad y lo que se espera lograr con ella.</p>
     <label for="tema">Tema de la unidad</label>
     <input type="text" id="tema" name="tema" placeholder="Ej. La fotosíntesis, La Revolución Industrial..." required>
 
-    <label for="objetivos">Objetivos de aprendizaje</label>
-    <textarea id="objetivos" name="objetivos" placeholder="¿Qué debería poder hacer el estudiante al terminar esta unidad?"></textarea>
+    <label for="objetivo_general">Objetivo general</label>
+    <textarea id="objetivo_general" name="objetivo_general" placeholder="La meta principal de la unidad, en una sola idea." required></textarea>
 
-    <label for="contexto">Contexto / contenido de la guía</label>
+    <label>Objetivos específicos</label>
+    <p class="hint">Metas puntuales que llevan al objetivo general. Agrega las que necesites.</p>
+    <div id="especificos-contenedor"></div>
+    <button type="button" class="btn-add" id="btn-agregar-especifico">+ Agregar objetivo específico</button>
+
+    <label for="contexto" style="margin-top:18px;">Contexto / contenido de la guía</label>
     <textarea id="contexto" name="contexto" placeholder="Texto principal que va en la guía docente."></textarea>
   </div>
 
   <div class="section-card">
-    <h2>02 · Trivia</h2>
-    <p class="hint">Agrega las preguntas de evaluación. Cada una necesita al menos 2 opciones y marcar la correcta.</p>
+    <h2>02 · Trivia (opcional)</h2>
+    <p class="hint">Si agregas preguntas de evaluación, cada una necesita al menos 2 opciones y marcar la correcta. Puedes dejarlo vacío.</p>
     <div id="preguntas-contenedor"></div>
     <button type="button" class="btn-add" id="btn-agregar-pregunta">+ Agregar pregunta</button>
   </div>
 
   <div class="section-card">
-    <h2>03 · Qué buscar</h2>
-    <p class="hint">Marca los tipos de recurso que quieres incluir. Todos usan los mismos términos de búsqueda de abajo.</p>
+    <h2>03 · Qué se incluye</h2>
+    <p class="hint">Todo paquete busca automáticamente estos 4 tipos de recurso con los mismos términos de búsqueda, para que el resultado sea siempre completo. Al final se arma también una bibliografía con todas las fuentes encontradas.</p>
     <div class="recursos-grid">
-      <label class="recurso-check"><input type="checkbox" name="recurso_imagenes" checked> Imágenes <span class="fuente-tag">Wikimedia + Openverse</span></label>
-      <label class="recurso-check"><input type="checkbox" name="recurso_videos"> Videos <span class="fuente-tag">Wikimedia + Internet Archive</span></label>
-      <label class="recurso-check"><input type="checkbox" name="recurso_repositorios"> Repositorios / proyectos <span class="fuente-tag">GitHub</span></label>
-      <label class="recurso-check"><input type="checkbox" name="recurso_ensayos"> Ensayos / artículos <span class="fuente-tag">Wikipedia</span></label>
+      <div class="recurso-check recurso-fijo">Imágenes <span class="fuente-tag">Wikimedia + Openverse</span></div>
+      <div class="recurso-check recurso-fijo">Videos <span class="fuente-tag">Wikimedia + Internet Archive</span></div>
+      <div class="recurso-check recurso-fijo">Repositorios / proyectos <span class="fuente-tag">GitHub</span></div>
+      <div class="recurso-check recurso-fijo">Ensayos / artículos <span class="fuente-tag">Wikipedia</span></div>
     </div>
 
     <label for="terminos_imagenes" style="margin-top:18px;">Términos de búsqueda</label>
     <input type="text" id="terminos_imagenes" name="terminos_imagenes" placeholder="Ej. célula vegetal, cloroplasto, hoja verde">
 
-    <label for="max_por_termino">Máximo de resultados por término (aplica a cada tipo marcado)</label>
+    <label for="max_por_termino">Máximo de resultados por término (aplica a cada tipo)</label>
     <input type="number" id="max_por_termino" name="max_por_termino" value="6" min="1" max="100">
   </div>
 
   <button type="submit" class="btn wide">Generar paquete</button>
 </form>
+
+<template id="tpl-especifico">
+  <div class="especifico-block" style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+    <input type="text" name="objetivo_especifico[]" placeholder="Ej. Identificar las fases del proceso..." style="flex:1;">
+    <button type="button" class="remove-especifico btn-add" style="white-space:nowrap;">Quitar</button>
+  </div>
+</template>
 
 <template id="tpl-pregunta">
   <div class="pregunta-block">
