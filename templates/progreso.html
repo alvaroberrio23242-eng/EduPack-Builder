@@ -2,12 +2,23 @@
 {% block title %}Generando paquete...{% endblock %}
 {% block content %}
 
-<h1 class="page-title">Generando: <span style="color:var(--burnt)">{{ job.tema }}</span></h1>
+<h1 class="page-title" id="page-title">Generando: <span style="color:var(--terracotta)">{{ job.tema }}</span><span id="title-dots" class="title-dots"></span></h1>
 <p class="subtitle">Esto arma la guía, busca las imágenes con licencia libre y empaqueta todo. No cierres esta pestaña.</p>
 
-<div class="section-card">
-  <span class="status-tag" id="status-tag">{{ job.estado }}</span>
+<div class="section-card" id="progress-card">
+
+  <div class="fases-track" id="fases-track"></div>
+
+  <div class="status-row">
+    <span class="status-tag" id="status-tag">
+      <span class="status-icon" id="status-icon"></span>
+      <span id="status-text">{{ job.estado }}</span>
+    </span>
+    <span class="progress-pct" id="progress-pct">0%</span>
+  </div>
+
   <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+
   <div class="log-box" id="log-box"></div>
   <div id="acciones" style="margin-top:20px;"></div>
 </div>
@@ -15,9 +26,117 @@
 <script>
 const jobId = "{{ job.id }}";
 const fill = document.getElementById("progress-fill");
-const tag = document.getElementById("status-tag");
+const pct = document.getElementById("progress-pct");
+const statusTag = document.getElementById("status-tag");
+const statusIcon = document.getElementById("status-icon");
+const statusText = document.getElementById("status-text");
 const logBox = document.getElementById("log-box");
 const acciones = document.getElementById("acciones");
+const titleDots = document.getElementById("title-dots");
+const fasesTrack = document.getElementById("fases-track");
+
+let renderedCount = 0;
+
+/* ---- Íconos SVG inline (mismo trazo que el resto del sitio) ---- */
+const ICONOS = {
+  guia: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5c3-1.5 6-1.5 8 0 2-1.5 5-1.5 8 0v13c-3-1.5-6-1.5-8 0-2-1.5-5-1.5-8 0z"/></svg>`,
+  imagen: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5.5-5.5L3 19"/></svg>`,
+  video: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5.5" width="14" height="13" rx="2"/><path d="M16.5 10l5-3v10l-5-3z"/></svg>`,
+  repo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 4l-5 8 5 8M16 4l5 8-5 8"/></svg>`,
+  ensayo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/><path d="M8 13h8M8 17h5"/></svg>`,
+  biblio: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg>`,
+  zip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8l2-4h14l2 4"/><path d="M3 8h18v11H3z"/><path d="M12 8v3M12 14v.01"/></svg>`,
+  ok: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12l5 5L20 6"/></svg>`,
+  error: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16v.01"/></svg>`,
+  general: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+};
+
+/* ---- Mapeo exacto a los valores reales de job["estado"] (jobs.py) ---- */
+const ESTADO_ICONOS = {
+  en_cola: ICONOS.general,
+  generando_contenido: ICONOS.guia,
+  buscando_imagenes: ICONOS.imagen,
+  buscando_videos: ICONOS.video,
+  buscando_repositorios: ICONOS.repo,
+  buscando_ensayos: ICONOS.ensayo,
+  generando_bibliografia: ICONOS.biblio,
+  empaquetando: ICONOS.zip,
+  listo: ICONOS.ok,
+  error: ICONOS.error,
+};
+
+const ESTADO_LABELS = {
+  en_cola: "En cola",
+  generando_contenido: "Generando guía",
+  buscando_imagenes: "Buscando imágenes",
+  buscando_videos: "Buscando videos",
+  buscando_repositorios: "Buscando repositorios",
+  buscando_ensayos: "Buscando ensayos",
+  generando_bibliografia: "Compilando bibliografía",
+  empaquetando: "Empaquetando",
+  listo: "Listo",
+  error: "Error",
+};
+
+/* Las 7 fases de trabajo reales, en el orden exacto de jobs.py::_ejecutar_job */
+const FASES_ORDEN = [
+  "generando_contenido", "buscando_imagenes", "buscando_videos",
+  "buscando_repositorios", "buscando_ensayos", "generando_bibliografia", "empaquetando",
+];
+const FASES = [
+  { key: "generando_contenido", label: "Guía y trivia", icon: ICONOS.guia },
+  { key: "buscando_imagenes", label: "Imágenes", icon: ICONOS.imagen },
+  { key: "buscando_videos", label: "Videos", icon: ICONOS.video },
+  { key: "buscando_repositorios", label: "Repositorios", icon: ICONOS.repo },
+  { key: "buscando_ensayos", label: "Ensayos", icon: ICONOS.ensayo },
+  { key: "generando_bibliografia", label: "Bibliografía", icon: ICONOS.biblio },
+  { key: "empaquetando", label: "Empaquetado", icon: ICONOS.zip },
+];
+
+function construirFases() {
+  fasesTrack.innerHTML = FASES.map((f, i) => `
+    <div class="fase-step is-pending" data-key="${f.key}" title="${f.label}">
+      <span class="fase-icon">${f.icon}</span>
+      <span class="fase-label">${f.label}</span>
+    </div>
+    ${i < FASES.length - 1 ? '<span class="fase-line"></span>' : ''}
+  `).join("");
+}
+
+function actualizarFases(estadoActual) {
+  fasesTrack.classList.toggle("is-error", estadoActual === "error");
+  if (estadoActual === "error") return; // se congela en lo último visto, sin adivinar la fase que falló
+
+  const idx = estadoActual === "listo" ? FASES_ORDEN.length : FASES_ORDEN.indexOf(estadoActual);
+  fasesTrack.querySelectorAll(".fase-step").forEach((el, i) => {
+    el.classList.remove("is-done", "is-current", "is-pending");
+    if (i < idx) el.classList.add("is-done");
+    else if (i === idx) el.classList.add("is-current");
+    else el.classList.add("is-pending");
+  });
+}
+
+function renderLog(lineas, estadoActual) {
+  logBox.querySelectorAll(".log-line.is-current").forEach(el => {
+    el.classList.remove("is-current");
+    el.classList.add("is-done");
+  });
+
+  const iconoFaseActual = ESTADO_ICONOS[estadoActual] || ICONOS.general;
+  for (let i = renderedCount; i < lineas.length; i++) {
+    const linea = lineas[i];
+    const div = document.createElement("div");
+    const esUltima = i === lineas.length - 1;
+    div.className = "log-line is-new" + (esUltima ? " is-current" : " is-done");
+    div.innerHTML = `<span class="log-icon">${iconoFaseActual}</span><span class="log-text">${linea}</span>`;
+    logBox.appendChild(div);
+    requestAnimationFrame(() => div.classList.remove("is-new"));
+  }
+  renderedCount = lineas.length;
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+construirFases();
 
 async function poll() {
   try {
@@ -25,19 +144,28 @@ async function poll() {
     if (!res.ok) return;
     const job = await res.json();
 
-    tag.textContent = job.estado;
-    const pct = job.total ? Math.min(100, Math.round((job.progreso / job.total) * 100)) : 0;
-    fill.style.width = pct + "%";
-    logBox.innerHTML = job.log.map(l => `<div>${l}</div>`).join("");
-    logBox.scrollTop = logBox.scrollHeight;
+    statusText.textContent = ESTADO_LABELS[job.estado] || job.estado;
+    statusIcon.innerHTML = ESTADO_ICONOS[job.estado] || ICONOS.general;
+    statusTag.classList.remove("is-spinning", "is-done", "is-error");
+    statusTag.classList.add(job.estado === "listo" ? "is-done" : job.estado === "error" ? "is-error" : "is-spinning");
+
+    const porcentaje = job.total ? Math.min(100, Math.round((job.progreso / job.total) * 100)) : 0;
+    fill.style.width = porcentaje + "%";
+    pct.textContent = porcentaje + "%";
+
+    actualizarFases(job.estado);
+    renderLog(job.log || [], job.estado);
 
     if (job.estado === "listo") {
+      titleDots.textContent = "";
+      fill.classList.add("is-complete");
       acciones.innerHTML = `
         <a class="btn" href="/vista-previa/${jobId}">Ver vista previa</a>
         <a class="btn secondary" href="/descargar/${jobId}">Descargar .zip</a>`;
       return;
     }
     if (job.estado === "error") {
+      titleDots.textContent = "";
       acciones.innerHTML = `<div class="alert">No se pudo generar el paquete: ${job.error}</div>`;
       return;
     }

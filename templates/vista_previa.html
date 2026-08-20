@@ -2,8 +2,31 @@
 {% block title %}Vista previa — {{ job.resultado.tema }}{% endblock %}
 {% block content %}
 
-<h1 class="page-title">Vista previa: <span style="color:var(--burnt)">{{ job.resultado.tema }}</span></h1>
+<h1 class="page-title">Vista previa: <span style="color:var(--terracotta)">{{ job.resultado.tema }}</span></h1>
 <p class="subtitle">Revisa lo que se generó antes de descargar el paquete final.</p>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <span class="stat-num">{{ job.resultado.num_imagenes }}</span>
+    <span class="stat-label">Imágenes</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-num">{{ job.resultado.num_preguntas }}</span>
+    <span class="stat-label">Preguntas</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-num">{{ job.resultado.videos | length if job.resultado.videos else 0 }}</span>
+    <span class="stat-label">Videos</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-num">{{ job.resultado.repositorios | length if job.resultado.repositorios else 0 }}</span>
+    <span class="stat-label">Repositorios</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-num">{{ job.resultado.ensayos | length if job.resultado.ensayos else 0 }}</span>
+    <span class="stat-label">Ensayos</span>
+  </div>
+</div>
 
 <div class="section-card">
   <h2>Objetivos</h2>
@@ -43,7 +66,10 @@
     <div class="preview-grid">
       {% for img in job.resultado.imagenes %}
         <figure>
-          <figcaption>{{ img.termino }} — {{ img.licencia }} ({{ img.fuente }})</figcaption>
+          <figcaption>
+            <span class="license-badge">✓ {{ img.licencia }}</span>
+            <span class="img-meta">{{ img.termino }} · {{ img.fuente }}</span>
+          </figcaption>
         </figure>
       {% endfor %}
     </div>
@@ -58,8 +84,7 @@
   <p class="hint">No se descargan automáticamente (pesan mucho); aquí tienes el enlace directo a cada uno.</p>
   {% for v in job.resultado.videos %}
     <div class="qa-item">
-      <p><strong>{{ v.titulo }}</strong> — {{ v.fuente }}</p>
-      <p>Licencia: {{ v.licencia }}</p>
+      <p><strong>{{ v.titulo }}</strong> — {{ v.fuente }} <span class="license-badge">✓ {{ v.licencia }}</span></p>
       <p><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.url }}</a></p>
     </div>
   {% endfor %}
@@ -71,7 +96,7 @@
   <h2>Repositorios y proyectos ({{ job.resultado.repositorios | length }} encontrados)</h2>
   {% for r in job.resultado.repositorios %}
     <div class="qa-item">
-      <p><strong>{{ r.nombre }}</strong>{% if r.es_plantilla %} <span class="fuente-tag">plantilla</span>{% endif %} — ⭐ {{ r.estrellas }} · {{ r.licencia }}</p>
+      <p><strong>{{ r.nombre }}</strong>{% if r.es_plantilla %} <span class="fuente-tag">plantilla</span>{% endif %} — ⭐ {{ r.estrellas }} <span class="license-badge">✓ {{ r.licencia }}</span></p>
       <p>{{ r.descripcion }}</p>
       <p><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.url }}</a></p>
     </div>
@@ -84,7 +109,7 @@
   <h2>Ensayos y artículos ({{ job.resultado.ensayos | length }} encontrados)</h2>
   {% for e in job.resultado.ensayos %}
     <div class="qa-item">
-      <p><strong>{{ e.titulo }}</strong> — {{ e.licencia }}</p>
+      <p><strong>{{ e.titulo }}</strong> <span class="license-badge">✓ {{ e.licencia }}</span></p>
       <p>{{ e.texto[:280] }}{% if e.texto|length > 280 %}...{% endif %}</p>
       <p><a href="{{ e.url }}" target="_blank" rel="noopener">{{ e.url }}</a></p>
     </div>
