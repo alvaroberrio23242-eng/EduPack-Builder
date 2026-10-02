@@ -4,7 +4,7 @@ No descarga el código (evita bajar repos completos de tamaño variable);
 entrega una lista curada con enlace, licencia y estrellas para que la
 persona elija cuál abrir.
 """
-import requests
+from . import net
 
 HEADERS = {"User-Agent": "EduPackBuilder/1.0", "Accept": "application/vnd.github+json"}
 
@@ -13,16 +13,22 @@ def buscar_repositorios(termino, max_resultados, log_cb=None):
     resultados = []
 
     def _query(q, limite):
-        try:
-            params = {"q": q, "sort": "stars", "order": "desc", "per_page": limite}
-            res = requests.get("https://api.github.com/search/repositories",
-                                params=params, headers=HEADERS, timeout=15)
-            res.raise_for_status()
-            return res.json().get("items", [])
-        except Exception as e:
-            if log_cb:
-                log_cb(f"⚠ GitHub no respondió para '{q}': {e}")
+        params = {"q": q, "sort": "stars", "order": "desc", "per_page": limite}
+        datos = net.get_json("https://api.github.com/search/repositories",
+                             params=params, headers=HEADERS, log_cb=log_cb,
+                             contexto=f"GitHub para «{q}»")
+        if datos is None:    # fallo de red o JSON inválido: net.py ya avisó
             return []
+        if not isinstance(datos, dict):
+            if log_cb:
+                log_cb(f"⚠ GitHub devolvió una respuesta inesperada para «{q}».")
+            return []
+        items = datos.get("items", [])
+        if not isinstance(items, list):
+            if log_cb:
+                log_cb(f"⚠ GitHub devolvió una respuesta inesperada para «{q}».")
+            return []
+        return [i for i in items if isinstance(i, dict)]
 
     items = _query(termino, max_resultados)
     plantillas = _query(f"{termino} is:template", max(1, max_resultados // 2))
@@ -33,12 +39,13 @@ def buscar_repositorios(termino, max_resultados, log_cb=None):
         if not full_name or full_name in vistos:
             continue
         vistos.add(full_name)
+        licencia = item.get("license")
         resultados.append({
             "termino": termino,
             "nombre": full_name,
             "descripcion": item.get("description") or "Sin descripción",
             "estrellas": item.get("stargazers_count", 0),
-            "licencia": (item.get("license") or {}).get("spdx_id") or "No especificada",
+            "licencia": (licencia.get("spdx_id") if isinstance(licencia, dict) else None) or "No especificada",
             "url": item.get("html_url"),
             "es_plantilla": bool(item.get("is_template")),
         })

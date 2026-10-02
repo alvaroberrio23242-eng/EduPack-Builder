@@ -1,23 +1,39 @@
 import os
 import json
+import re
 import threading
+import time
 import uuid
 from datetime import datetime
 
-from . import content, images, videos, repos, essays, packager
+from . import content, filenames, images, videos, repos, essays, packager
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "jobs")
 HISTORIAL_PATH = os.path.join(DATA_DIR, "historial.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# Solo protege el historial.json compartido entre hilos del mismo proceso.
-# El estado de cada job ya no necesita lock: cada job solo lo escribe su
-# propio hilo, y las escrituras son atómicas (ver _escribir_estado).
+# Protege las operaciones read-modify-write compartidas entre hilos:
+# el historial.json global y el estado.json de cada job (que puede ser
+# leído/escrito por el hilo del job y, a la vez, consultado por las
+# peticiones HTTP de Flask). Secciones críticas pequeñas: solo leer,
+# modificar en memoria y escribir. Nunca se anida un lock dentro de otro,
+# así que no hay riesgo de deadlock.
 _LOCK = threading.Lock()
 
 
 def _carpeta_job(job_id):
     return os.path.join(DATA_DIR, job_id)
+
+
+# Los ids legítimos los genera crear_job() con uuid4().hex[:10] (hex puro,
+# 10 caracteres). Cualquier otra cosa no debe usarse para construir rutas:
+# sin esta comprobación, un job_id manipulado desde la URL ("..", "..\\..\\x")
+# haría que _leer_estado leyera estado.json fuera de data/jobs/.
+_ID_VALIDO = re.compile(r"[0-9a-f]{10}")
+
+
+def es_id_valido(job_id):
+    return isinstance(job_id, str) and _ID_VALIDO.fullmatch(job_id) is not None
 
 
 def _ruta_estado(job_id):
@@ -40,14 +56,29 @@ def _leer_estado(job_id):
 
 def _escribir_estado(job_id, estado_dict):
     """Escritura atómica: escribe en un .tmp y luego renombra, para que
-    ningún lector vea nunca un estado.json a medio escribir."""
+    ningún lector vea nunca un estado.json a medio escribir.
+
+    Dos detalles de robustez:
+    - DATA_DIR se resuelve UNA sola vez por llamada, para que la carpeta de
+      creación y la del renombre sean siempre la misma.
+    - En Windows, os.replace falla con PermissionError si otro hilo está
+      leyendo estado.json justo en ese instante (el lector mantiene el
+      archivo abierto); se reintenta brevemente antes de rendirse.
+    """
     carpeta = _carpeta_job(job_id)
     os.makedirs(carpeta, exist_ok=True)
-    ruta = _ruta_estado(job_id)
+    ruta = os.path.join(carpeta, "estado.json")
     ruta_tmp = ruta + ".tmp"
     with open(ruta_tmp, "w", encoding="utf-8") as f:
         json.dump(estado_dict, f, ensure_ascii=False, indent=2)
-    os.replace(ruta_tmp, ruta)
+    for intento in range(5):
+        try:
+            os.replace(ruta_tmp, ruta)
+            return
+        except PermissionError:
+            if intento == 4:
+                raise
+            time.sleep(0.01)
 
 
 def _leer_historial():
@@ -67,6 +98,8 @@ def obtener_historial():
 
 
 def obtener_job(job_id):
+    if not es_id_valido(job_id):
+        return None
     return _leer_estado(job_id)
 
 
@@ -94,28 +127,31 @@ def crear_job(tema, objetivo_general, objetivos_especificos, contexto, preguntas
 
 
 def _log(job_id, mensaje):
-    estado = _leer_estado(job_id)
-    if estado is None:
-        return
-    estado["log"].append(mensaje)
-    _escribir_estado(job_id, estado)
+    with _LOCK:
+        estado = _leer_estado(job_id)
+        if estado is None:
+            return
+        estado["log"].append(mensaje)
+        _escribir_estado(job_id, estado)
 
 
 def _set_estado(job_id, nuevo_estado):
-    estado = _leer_estado(job_id)
-    if estado is None:
-        return
-    estado["estado"] = nuevo_estado
-    _escribir_estado(job_id, estado)
+    with _LOCK:
+        estado = _leer_estado(job_id)
+        if estado is None:
+            return
+        estado["estado"] = nuevo_estado
+        _escribir_estado(job_id, estado)
 
 
 def _actualizar_progreso(job_id, progreso, total):
-    estado = _leer_estado(job_id)
-    if estado is None:
-        return
-    estado["progreso"] = progreso
-    estado["total"] = total
-    _escribir_estado(job_id, estado)
+    with _LOCK:
+        estado = _leer_estado(job_id)
+        if estado is None:
+            return
+        estado["progreso"] = progreso
+        estado["total"] = total
+        _escribir_estado(job_id, estado)
 
 
 def _ejecutar_job(job_id, tema, objetivo_general, objetivos_especificos, contexto, preguntas, terminos, max_por_termino):
@@ -161,7 +197,10 @@ def _ejecutar_job(job_id, tema, objetivo_general, objetivos_especificos, context
 
         _set_estado(job_id, "empaquetando")
         _log(job_id, "Empaquetando todo en un ZIP...")
-        zip_nombre = f"{tema.strip().replace(' ', '_') or 'EduPack'}.zip"
+        zip_nombre = filenames.sanitizar_nombre(
+            tema.strip().replace(" ", "_"), extension=".zip",
+            max_largo=120, fallback="EduPack",
+        )
         zip_destino = os.path.join(DATA_DIR, job_id, zip_nombre)
         packager.empaquetar(carpeta_raiz, zip_destino)
 
@@ -184,10 +223,11 @@ def _ejecutar_job(job_id, tema, objetivo_general, objetivos_especificos, context
             "fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
 
-        estado = _leer_estado(job_id) or {"log": []}
-        estado["estado"] = "listo"
-        estado["resultado"] = resultado
-        _escribir_estado(job_id, estado)
+        with _LOCK:
+            estado = _leer_estado(job_id) or {"log": []}
+            estado["estado"] = "listo"
+            estado["resultado"] = resultado
+            _escribir_estado(job_id, estado)
 
         with _LOCK:
             historial = _leer_historial()
@@ -201,14 +241,17 @@ def _ejecutar_job(job_id, tema, objetivo_general, objetivos_especificos, context
         _log(job_id, "¡Listo! Paquete generado correctamente.")
 
     except Exception as e:
-        estado = _leer_estado(job_id) or {"log": []}
-        estado["estado"] = "error"
-        estado["error"] = str(e)
-        _escribir_estado(job_id, estado)
+        with _LOCK:
+            estado = _leer_estado(job_id) or {"log": []}
+            estado["estado"] = "error"
+            estado["error"] = str(e)
+            _escribir_estado(job_id, estado)
         _log(job_id, f"✗ Error: {e}")
 
 
 def ruta_zip_historial(job_id):
+    if not es_id_valido(job_id):
+        return None
     entry = next((h for h in _leer_historial() if h["id"] == job_id), None)
     if not entry:
         return None

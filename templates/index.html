@@ -2,7 +2,7 @@
 {% block title %}EduPack Builder — Nuevo paquete{% endblock %}
 {% block content %}
 
-<video class="bg-video" autoplay muted loop playsinline poster="{{ url_for('static', filename='video/poster.jpg') }}">
+<video class="bg-video" autoplay muted loop playsinline aria-hidden="true" tabindex="-1" poster="{{ url_for('static', filename='video/poster.jpg') }}">
   <source src="{{ url_for('static', filename='video/fondo.mp4') }}" type="video/mp4">
 </video>
 <div class="bg-video-overlay"></div>

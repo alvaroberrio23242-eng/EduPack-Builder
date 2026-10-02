@@ -6,9 +6,9 @@ persona decida cuáles bajar.
 Fuentes: Wikimedia Commons e Internet Archive (ninguna requiere clave de API).
 """
 import os
-import requests
 
-from .images import es_licencia_valida, _extraer_licencia_commons
+from . import net
+from .images import es_licencia_valida, _extraer_licencia_commons, _meta_valor
 
 HEADERS = {"User-Agent": "EduPackBuilder/1.0 (uso educativo)"}
 
@@ -20,28 +20,39 @@ def _buscar_commons_video(termino, max_resultados, log_cb=None):
         "gsrsearch": termino, "gsrnamespace": "6", "gsrlimit": max_resultados,
         "prop": "imageinfo", "iiprop": "url|extmetadata|mime",
     }
-    try:
-        res = requests.get("https://commons.wikimedia.org/w/api.php",
-                            params=params, headers=HEADERS, timeout=15)
-        res.raise_for_status()
-        pages = res.json().get("query", {}).get("pages", {})
-    except Exception as e:
+    datos = net.get_json("https://commons.wikimedia.org/w/api.php",
+                         params=params, headers=HEADERS, log_cb=log_cb,
+                         contexto=f"Wikimedia Commons (video) para «{termino}»")
+    if datos is None:      # fallo de red o JSON inválido: net.py ya avisó por log
+        return resultados
+    if not isinstance(datos, dict):
         if log_cb:
-            log_cb(f"⚠ Wikimedia Commons (video) no respondió para '{termino}': {e}")
+            log_cb(f"⚠ Wikimedia Commons (video) devolvió una respuesta inesperada para «{termino}».")
+        return resultados
+    consulta = datos.get("query")
+    pages = consulta.get("pages", {}) if isinstance(consulta, dict) else {}
+    if not isinstance(pages, dict):
+        if log_cb:
+            log_cb(f"⚠ Wikimedia Commons (video) devolvió una respuesta inesperada para «{termino}».")
         return resultados
 
     for _, info in pages.items():
-        imageinfo = info.get("imageinfo", [{}])[0]
-        mime = imageinfo.get("mime", "")
-        if not mime.startswith("video/"):
+        if not isinstance(info, dict):
             continue
-        meta = imageinfo.get("extmetadata", {})
+        imageinfo = {}
+        imagenes = info.get("imageinfo")
+        if isinstance(imagenes, list) and imagenes and isinstance(imagenes[0], dict):
+            imageinfo = imagenes[0]
+        mime = imageinfo.get("mime", "")
+        if not isinstance(mime, str) or not mime.startswith("video/"):
+            continue
+        meta = imageinfo.get("extmetadata") if isinstance(imageinfo.get("extmetadata"), dict) else {}
         licencia = _extraer_licencia_commons(meta)
         if not es_licencia_valida(licencia):
             continue
         resultados.append({
             "termino": termino,
-            "titulo": meta.get("ObjectName", {}).get("value", "Sin título"),
+            "titulo": _meta_valor(meta, "ObjectName", "Sin título") or "Sin título",
             "url": imageinfo.get("url"),
             "licencia": licencia,
             "fuente": "Wikimedia Commons",
@@ -51,24 +62,32 @@ def _buscar_commons_video(termino, max_resultados, log_cb=None):
 
 def _buscar_internet_archive(termino, max_resultados, log_cb=None):
     resultados = []
-    try:
-        res = requests.get(
-            "https://archive.org/advancedsearch.php",
-            params={
-                "q": f'{termino} AND mediatype:(movies)',
-                "fl[]": ["identifier", "title", "licenseurl"],
-                "rows": max_resultados, "output": "json",
-            },
-            headers=HEADERS, timeout=15,
-        )
-        res.raise_for_status()
-        docs = res.json().get("response", {}).get("docs", [])
-    except Exception as e:
+    datos = net.get_json(
+        "https://archive.org/advancedsearch.php",
+        params={
+            "q": f'{termino} AND mediatype:(movies)',
+            "fl[]": ["identifier", "title", "licenseurl"],
+            "rows": max_resultados, "output": "json",
+        },
+        headers=HEADERS, log_cb=log_cb,
+        contexto=f"Internet Archive para «{termino}»",
+    )
+    if datos is None:      # fallo de red o JSON inválido: net.py ya avisó por log
+        return resultados
+    if not isinstance(datos, dict):
         if log_cb:
-            log_cb(f"⚠ Internet Archive no respondió para '{termino}': {e}")
+            log_cb(f"⚠ Internet Archive devolvió una respuesta inesperada para «{termino}».")
+        return resultados
+    respuesta = datos.get("response")
+    docs = respuesta.get("docs", []) if isinstance(respuesta, dict) else []
+    if not isinstance(docs, list):
+        if log_cb:
+            log_cb(f"⚠ Internet Archive devolvió una respuesta inesperada para «{termino}».")
         return resultados
 
     for d in docs:
+        if not isinstance(d, dict):
+            continue
         identifier = d.get("identifier")
         if not identifier:
             continue

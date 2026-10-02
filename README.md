@@ -29,6 +29,8 @@ No es un generador de contenido con IA: busca y filtra material que ya existe co
 git clone https://github.com/alvaroberrio23242-eng/EduPack-Builder.git
 cd EduPack-Builder
 pip install -r requirements.txt
+# La app exige una SECRET_KEY; en local se habilita el modo desarrollo:
+export EDUPACK_DEV=1        # PowerShell: $env:EDUPACK_DEV="1"
 python app.py
 ```
 
@@ -58,9 +60,12 @@ Nace de automatizar dos scripts de consola sueltos en uno solo, configurable des
 ## Para desplegarlo online
 
 Cualquier servicio que corra Flask sirve (Render, Railway, PythonAnywhere, Fly.io).
-- Definir `SECRET_KEY` y quitar `debug=True` antes de producción.
+- Definir la variable `SECRET_KEY` (obligatoria: sin ella la app no arranca) y dejar `FLASK_DEBUG=0`. Ver `.env.example` con las variables disponibles.
 - `data/jobs/` necesita almacenamiento persistente si quieres que el historial sobreviva a un redeploy.
 - Las búsquedas requieren salida a internet (Wikimedia, Openverse, GitHub y Wikipedia); ninguna pide clave de API.
+- El historial y los jobs viven en `data/jobs/` sin limpieza automática: no hay TTL, y crecen mientras se usa la app.
+- No hay cuentas de usuario: cada job queda ligado a la sesión del navegador que lo creó (cookie firmada por Flask). Al borrar las cookies, esos jobs dejan de verse en el historial (siguen en disco).
+- El Procfile corre **un solo worker** de gunicorn; el candado de `edupack/jobs.py` protege dentro de ese proceso. Si se escalan varios workers, ese candado ya no protege entre procesos.
 
 ## Roadmap
 

@@ -6,7 +6,8 @@ Usa DOS motores en paralelo para no depender de uno solo:
 Genérico: recibe la lista de términos desde el formulario, no un tema fijo.
 """
 import os
-import requests
+
+from . import net
 
 LICENCIAS_PERMITIDAS = [
     "cc-by", "cc-by-sa", "cc0", "pd", "public domain",
@@ -29,6 +30,15 @@ def es_licencia_valida(licencia_str: str) -> bool:
     return any(p in lic for p in LICENCIAS_PERMITIDAS)
 
 
+def _meta_valor(meta: dict, campo: str, default=""):
+    """Lee meta[campo]['value'] tolerando respuestas con forma inesperada."""
+    entrada = meta.get(campo)
+    if isinstance(entrada, dict):
+        valor = entrada.get("value", default)
+        return default if valor is None else valor
+    return default
+
+
 def _extraer_licencia_commons(meta: dict) -> str:
     """
     Dos bugs corregidos aquí:
@@ -43,7 +53,7 @@ def _extraer_licencia_commons(meta: dict) -> str:
     último recurso, y LICENCIAS_PERMITIDAS ya reconoce también su forma humana.
     """
     for campo in ("License", "LicenseShortName", "UsageTerms"):
-        valor = meta.get(campo, {}).get("value", "")
+        valor = _meta_valor(meta, campo)
         if valor:
             return valor
     return ""
@@ -58,29 +68,40 @@ def _buscar_commons(termino, max_resultados, log_cb=None):
         "gsrlimit": str(max_resultados),
         "prop": "imageinfo", "iiprop": "url|extmetadata",
     }
-    try:
-        res = requests.get("https://commons.wikimedia.org/w/api.php",
-                            params=params, headers=HEADERS, timeout=15)
-        res.raise_for_status()
-        pages = res.json().get("query", {}).get("pages", {})
-    except Exception as e:
+    datos = net.get_json("https://commons.wikimedia.org/w/api.php",
+                         params=params, headers=HEADERS, log_cb=log_cb,
+                         contexto=f"Wikimedia Commons para «{termino}»")
+    if datos is None:      # fallo de red o JSON inválido: net.py ya avisó por log
+        return resultados
+    if not isinstance(datos, dict):
         if log_cb:
-            log_cb(f"⚠ Wikimedia Commons no respondió para '{termino}': {e}")
+            log_cb(f"⚠ Wikimedia Commons devolvió una respuesta inesperada para «{termino}».")
+        return resultados
+    consulta = datos.get("query")
+    pages = consulta.get("pages", {}) if isinstance(consulta, dict) else {}
+    if not isinstance(pages, dict):
+        if log_cb:
+            log_cb(f"⚠ Wikimedia Commons devolvió una respuesta inesperada para «{termino}».")
         return resultados
 
     for _, info in pages.items():
-        imageinfo = info.get("imageinfo", [{}])[0]
+        if not isinstance(info, dict):
+            continue
+        imageinfo = {}
+        imagenes = info.get("imageinfo")
+        if isinstance(imagenes, list) and imagenes and isinstance(imagenes[0], dict):
+            imageinfo = imagenes[0]
         url = imageinfo.get("url")
-        meta = imageinfo.get("extmetadata", {})
+        meta = imageinfo.get("extmetadata") if isinstance(imageinfo.get("extmetadata"), dict) else {}
         licencia = _extraer_licencia_commons(meta)
         ext = os.path.splitext(url or "")[-1].split("?")[0].lower()
         if not url or ext not in (".jpg", ".jpeg", ".png"):
             continue
         resultados.append({
             "termino": termino, "url_descarga": url,
-            "descripcion": meta.get("ObjectName", {}).get("value")
-                or meta.get("ImageDescription", {}).get("value", "Sin descripción"),
-            "autor": meta.get("Artist", {}).get("value", "No especificado"),
+            "descripcion": _meta_valor(meta, "ObjectName")
+                or _meta_valor(meta, "ImageDescription", "Sin descripción"),
+            "autor": _meta_valor(meta, "Artist", "No especificado"),
             "licencia": licencia, "url_fuente": url, "fuente": "Wikimedia Commons",
         })
     return resultados
@@ -93,17 +114,24 @@ def _buscar_openverse(termino, max_resultados, log_cb=None):
         "license": "cc0,pdm,by,by-sa",
         "page_size": min(max_resultados, 20),
     }
-    try:
-        res = requests.get("https://api.openverse.org/v1/images/",
-                            params=params, headers=HEADERS, timeout=15)
-        res.raise_for_status()
-        items = res.json().get("results", [])
-    except Exception as e:
+    datos = net.get_json("https://api.openverse.org/v1/images/",
+                         params=params, headers=HEADERS, log_cb=log_cb,
+                         contexto=f"Openverse para «{termino}»")
+    if datos is None:      # fallo de red o JSON inválido: net.py ya avisó por log
+        return resultados
+    if not isinstance(datos, dict):
         if log_cb:
-            log_cb(f"⚠ Openverse no respondió para '{termino}': {e}")
+            log_cb(f"⚠ Openverse devolvió una respuesta inesperada para «{termino}».")
+        return resultados
+    items = datos.get("results", [])
+    if not isinstance(items, list):
+        if log_cb:
+            log_cb(f"⚠ Openverse devolvió una respuesta inesperada para «{termino}».")
         return resultados
 
     for item in items:
+        if not isinstance(item, dict):
+            continue
         url = item.get("url")
         ext = os.path.splitext(url or "")[-1].split("?")[0].lower()
         if not url or ext not in (".jpg", ".jpeg", ".png"):
@@ -166,8 +194,10 @@ def buscar_y_descargar(terminos, max_por_termino, carpeta_salida, progress_cb=No
             nombre = f"imagen_{len(descargadas) + 1}{ext}"
             ruta = os.path.join(carpeta_salida, nombre)
             try:
-                resp = requests.get(c["url_descarga"], headers=HEADERS, timeout=15)
-                resp.raise_for_status()
+                resp = net.get_respuesta(c["url_descarga"], headers=HEADERS, log_cb=log_cb,
+                                         contexto=f"imagen de «{termino}»")
+                if resp is None:  # fallo de red: net.py ya avisó por log
+                    continue
 
                 # Validación de contenido: si el servidor devolvió un error
                 # (410, página HTML de "no encontrado", etc.) puede llegar con
