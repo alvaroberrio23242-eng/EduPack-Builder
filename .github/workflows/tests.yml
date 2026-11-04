@@ -26,4 +26,4 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Correr tests con cobertura
-        run: pytest -v
+        run: python -m pytest -v
