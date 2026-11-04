@@ -1,8 +1,8 @@
 # AGENTS - EduPack_Builder
-Reglas fijas. Leer antes de actuar. Protocolo global: D:\Proyectos\_mip\MIP.md
+Reglas fijas. Leer antes de actuar. Protocolo global: MIP.md (carpeta _mip del workspace)
 
 ## Reglas
-- Trabajar solo dentro de D:\Proyectos\EduPack_Builder; verificar la ruta antes de editar.
+- Trabajar solo dentro de este repositorio; verificar la ruta antes de editar.
 - Diagnosticar antes de modificar; preservar cambios locales; backup si hay riesgo de perdida.
 - No inventar resultados, funciones ni URLs; etiquetar CONFIRMADO / PENDIENTE / INFERENCIA.
 - No eliminar archivos ni tocar la base de datos sin autorizacion.

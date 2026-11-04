@@ -24,7 +24,7 @@ Por completar (carpetas y componentes principales).
 - Por completar
 
 ## DECISIONS
-- 2026-11-03: se adopta MIP (D:\Proyectos\_mip\MIP.md).
+- 2026-11-03: se adopta MIP (MIP.md).
 
 ## RISKS
 Por completar.
