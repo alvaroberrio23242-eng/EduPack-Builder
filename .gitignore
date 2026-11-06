@@ -5,3 +5,7 @@ data/jobs/
 .env
 .coverage
 htmlcov/
+
+*.bak_*
+_backups/
+edupack_test_out.txt

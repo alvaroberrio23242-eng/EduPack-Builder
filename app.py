@@ -2,7 +2,7 @@ import os
 import secrets
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, abort, session
 
-from edupack import jobs
+from edupack import jobs, seleccion
 
 
 def resolver_secret_key(config):
@@ -134,7 +134,7 @@ def vista_previa(job_id):
         abort(404)
     if not es_job_propio(job_id):
         abort(403)
-    return render_template("vista_previa.html", job=job)
+    return render_template("vista_previa.html", job=job, seleccion=seleccion.seleccion_de_job(job))
 
 
 @app.route("/descargar/<job_id>")
@@ -158,6 +158,78 @@ def historial():
     items = [i for i in jobs.obtener_historial() if i.get("id") in propios]
     return render_template("historial.html", items=items)
 
+
+
+@app.route("/api/seleccion/<job_id>", methods=["POST"])
+def api_guardar_seleccion(job_id):
+    if not request.is_json:
+        return jsonify({"error": "Se requiere JSON."}), 400
+
+    datos = request.get_json(silent=True)
+    if not isinstance(datos, dict):
+        return jsonify({"error": "JSON inválido."}), 400
+
+    job = jobs.obtener_job(job_id)
+    if job is None:
+        return jsonify({"error": "Trabajo no encontrado."}), 404
+
+    proteger_job(job_id, job)
+
+    try:
+        resultado = seleccion.guardar_seleccion(
+            job_id,
+            datos.get("excluidos"),
+            datos.get("version"),
+        )
+        return jsonify(resultado), 200
+
+    except seleccion.VersionConflicto as exc:
+        return jsonify({
+            "error": str(exc),
+            "version_actual": exc.version_actual,
+        }), 409
+
+    except seleccion.SeleccionInvalida as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    except seleccion.JobNoDisponible as exc:
+        return jsonify({"error": str(exc)}), 404
+
+
+@app.route("/api/reempaquetar/<job_id>", methods=["POST"])
+def api_reempaquetar(job_id):
+    if not request.is_json:
+        return jsonify({"error": "Se requiere JSON."}), 400
+
+    datos = request.get_json(silent=True)
+    if not isinstance(datos, dict):
+        return jsonify({"error": "JSON inválido."}), 400
+
+    job = jobs.obtener_job(job_id)
+    if job is None:
+        return jsonify({"error": "Trabajo no encontrado."}), 404
+
+    proteger_job(job_id, job)
+
+    try:
+        resultado = seleccion.reempaquetar(job_id)
+        return jsonify(resultado), 200
+
+    except seleccion.JobNoDisponible as exc:
+        return jsonify({"error": str(exc)}), 404
+
+    except seleccion.SeleccionInvalida as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    except (
+        seleccion.ReempaquetadoEnCurso,
+        seleccion.ZipOcupado,
+        seleccion.VersionConflicto,
+    ) as exc:
+        respuesta = {"error": str(exc)}
+        if isinstance(exc, seleccion.VersionConflicto):
+            respuesta["version_actual"] = exc.version_actual
+        return jsonify(respuesta), 409
 
 if __name__ == "__main__":
     app.run(debug=os.environ.get("FLASK_DEBUG", "0") == "1", host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

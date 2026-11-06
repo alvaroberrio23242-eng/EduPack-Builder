@@ -5,6 +5,26 @@
 <h1 class="page-title">Vista previa: <span style="color:var(--terracotta)">{{ job.resultado.tema }}</span></h1>
 <p class="subtitle">Revisa lo que se generó antes de descargar el paquete final.</p>
 
+<div class="section-card" id="seleccion-panel"
+     data-job-id="{{ job.id }}"
+     data-version="{{ seleccion.version }}"
+     data-zip-version="{{ seleccion.zip_version }}">
+  <h2>Contenido del paquete</h2>
+  <p class="hint">Marca los recursos que deseas incluir en el ZIP.</p>
+  <p id="seleccion-estado" role="status" aria-live="polite">
+    {% if seleccion.version != seleccion.zip_version %}
+      La selección cambió; todavía no está en el ZIP.
+    {% else %}
+      La selección está sincronizada con el ZIP.
+    {% endif %}
+  </p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+    <button type="button" class="btn" id="guardar-seleccion">Guardar selección</button>
+    <button type="button" class="btn" id="reempaquetar-seleccion">Actualizar ZIP</button>
+    <button type="button" class="btn" id="restaurar-seleccion">Restaurar todo</button>
+  </div>
+</div>
+
 <div class="stats-grid">
   <div class="stat-card">
     <span class="stat-num">{{ job.resultado.num_imagenes }}</span>
@@ -84,6 +104,10 @@
   <p class="hint">No se descargan automáticamente (pesan mucho); aquí tienes el enlace directo a cada uno.</p>
   {% for v in job.resultado.videos %}
     <div class="qa-item">
+      <label style="display:block;margin-bottom:8px;">
+        <input type="checkbox" data-clave="videos:{{ loop.index0 }}" {% if ('videos:' ~ (loop.index0|string)) not in seleccion.excluidos %}checked{% endif %}>
+        Incluir en el paquete
+      </label>
       <p><strong>{{ v.titulo }}</strong> — {{ v.fuente }} <span class="license-badge">✓ {{ v.licencia }}</span></p>
       <p><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.url }}</a></p>
     </div>
@@ -96,6 +120,10 @@
   <h2>Repositorios y proyectos ({{ job.resultado.repositorios | length }} encontrados)</h2>
   {% for r in job.resultado.repositorios %}
     <div class="qa-item">
+      <label style="display:block;margin-bottom:8px;">
+        <input type="checkbox" data-clave="repositorios:{{ loop.index0 }}" {% if ('repositorios:' ~ (loop.index0|string)) not in seleccion.excluidos %}checked{% endif %}>
+        Incluir en el paquete
+      </label>
       <p><strong>{{ r.nombre }}</strong>{% if r.es_plantilla %} <span class="fuente-tag">plantilla</span>{% endif %} — ⭐ {{ r.estrellas }} <span class="license-badge">✓ {{ r.licencia }}</span></p>
       <p>{{ r.descripcion }}</p>
       <p><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.url }}</a></p>
@@ -109,6 +137,10 @@
   <h2>Ensayos y artículos ({{ job.resultado.ensayos | length }} encontrados)</h2>
   {% for e in job.resultado.ensayos %}
     <div class="qa-item">
+      <label style="display:block;margin-bottom:8px;">
+        <input type="checkbox" data-clave="ensayos:{{ loop.index0 }}" {% if ('ensayos:' ~ (loop.index0|string)) not in seleccion.excluidos %}checked{% endif %}>
+        Incluir en el paquete
+      </label>
       <p><strong>{{ e.titulo }}</strong> <span class="license-badge">✓ {{ e.licencia }}</span></p>
       <p>{{ e.texto[:280] }}{% if e.texto|length > 280 %}...{% endif %}</p>
       <p><a href="{{ e.url }}" target="_blank" rel="noopener">{{ e.url }}</a></p>
@@ -124,4 +156,141 @@
 </div>
 
 <a class="btn wide" href="{{ url_for('descargar', job_id=job.id) }}">Descargar .zip</a>
+
+<script id="seleccion-script">
+(() => {
+  const panel = document.getElementById("seleccion-panel");
+  if (!panel) return;
+
+  const estado = document.getElementById("seleccion-estado");
+  const botonGuardar = document.getElementById("guardar-seleccion");
+  const botonActualizar = document.getElementById("reempaquetar-seleccion");
+  const botonRestaurar = document.getElementById("restaurar-seleccion");
+  const jobId = panel.dataset.jobId;
+  const casillas = () => [...document.querySelectorAll("[data-clave]")];
+
+  const mostrar = (mensaje) => {
+    if (estado) estado.textContent = mensaje;
+  };
+
+  const excluidosActuales = () =>
+    casillas()
+      .filter(c => !c.checked)
+      .map(c => c.dataset.clave);
+
+  async function enviar(url, datos) {
+    const respuesta = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(datos)
+    });
+
+    let resultado = {};
+    try {
+      resultado = await respuesta.json();
+    } catch (_) {}
+
+    if (!respuesta.ok) {
+      const error = new Error(
+        resultado.error || resultado.mensaje ||
+        `Error HTTP ${respuesta.status}`
+      );
+      error.status = respuesta.status;
+      throw error;
+    }
+
+    return resultado;
+  }
+
+  function actualizarVersion(resultado, zipActualizado = false) {
+    if (resultado.version !== undefined) {
+      panel.dataset.version = resultado.version;
+    } else {
+      panel.dataset.version = String(
+        Number(panel.dataset.version || 0) + 1
+      );
+    }
+
+    if (resultado.zip_version !== undefined) {
+      panel.dataset.zipVersion = resultado.zip_version;
+    } else if (zipActualizado) {
+      panel.dataset.zipVersion = panel.dataset.version;
+    }
+  }
+
+  async function guardar() {
+    const resultado = await enviar(
+      `/api/seleccion/${encodeURIComponent(jobId)}`,
+      {
+        excluidos: excluidosActuales(),
+        version: Number(panel.dataset.version || 0)
+      }
+    );
+
+    actualizarVersion(resultado);
+    mostrar("Selección guardada. Todavía no está en el ZIP.");
+    return resultado;
+  }
+
+  botonGuardar?.addEventListener("click", async () => {
+    try {
+      botonGuardar.disabled = true;
+      await guardar();
+      mostrar("Selección guardada. Todavía no está en el ZIP.");
+    } catch (error) {
+      mostrar(error.status === 409
+        ? "Conflicto de versión. Recarga la página antes de continuar."
+        : `No se pudo guardar: ${error.message}`);
+    } finally {
+      botonGuardar.disabled = false;
+    }
+  });
+
+  botonRestaurar?.addEventListener("click", async () => {
+    try {
+      botonRestaurar.disabled = true;
+      casillas().forEach(c => { c.checked = true; });
+      await guardar();
+      mostrar("Todos los recursos están seleccionados. Actualiza el ZIP.");
+    } catch (error) {
+      mostrar(error.status === 409
+        ? "Conflicto de versión. Recarga la página."
+        : `No se pudo restaurar: ${error.message}`);
+    } finally {
+      botonRestaurar.disabled = false;
+    }
+  });
+
+  botonActualizar?.addEventListener("click", async () => {
+    try {
+      botonActualizar.disabled = true;
+      await guardar();
+
+      mostrar("Actualizando el ZIP...");
+
+      const resultado = await enviar(
+        `/api/reempaquetar/${encodeURIComponent(jobId)}`,
+        {}
+      );
+
+      actualizarVersion(resultado, true);
+      mostrar("ZIP actualizado correctamente.");
+    } catch (error) {
+      mostrar(error.status === 409
+        ? "Conflicto de versión. Recarga la página."
+        : `No se pudo actualizar el ZIP: ${error.message}`);
+    } finally {
+      botonActualizar.disabled = false;
+    }
+  });
+
+  const sincronizada =
+    panel.dataset.version === panel.dataset.zipVersion;
+
+  if (!sincronizada) {
+    mostrar("La selección cambió; todavía no está en el ZIP.");
+  }
+})();
+</script>
+
 {% endblock %}
