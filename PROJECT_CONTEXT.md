@@ -31,3 +31,12 @@ Por completar.
 
 ## NEXT
 Por completar.
+
+## HANDOFF 2026-11-05 (Claude)
+
+- ESTADO: main = ed681c8 (Fase 3 mezclada y subida a GitHub, LOCAL == origin). 244 tests pasan. Deploy en Render sin verificar (https://edupack-builder.onrender.com; plan gratis: el servicio duerme y los jobs en disco son efimeros).
+- HECHO: seleccion de recursos para el ZIP (edupack/seleccion.py, rutas /api/seleccion y /api/reempaquetar); panel y script duplicados de vista_previa.html corregidos; rediseno visual partes 1 y 2 en static/css/rediseno.css (Fraunces, paleta clara, bordes de 1px, tarjetas e insignias de licencia), cargado desde base.html.
+- PENDIENTE (en orden): 1) probar en Render con "Historia del Jazz" (diseno, .zip con imagenes, guardar seleccion y actualizar ZIP); 2) mostrar las imagenes en la vista previa (la seccion Imagenes de vista_previa.html no tiene etiqueta img); 3) parte 3 del rediseno (pantalla de progreso: barra mas clara, iconos por tipo de recurso).
+- DECISIONES: trabajo solo desde PowerShell con bloques completos (sin OpenCode); nada se marca completado sin evidencia; los cambios visuales no tocan el backend; nunca force push.
+- RIESGOS: revision visual en el navegador sin confirmar; imagenes no visibles en la vista previa; deploy sin verificar.
+- HISTORIAL: Registro de cambios en Notion (fila de EduPack Builder, 2026-11-05).
